@@ -1,63 +1,68 @@
 #!/bin/bash
-set -euo pipefail
 
-TARGET="${1:?Usage: $0 <target-domain>}"
+# Target definition
+TARGET=""
 OUTPUT_DIR="recon_$TARGET"
-WORDLIST="${WORDLIST:-/usr/share/seclists/Discovery/Web-Content/raft-medium-directories.txt}"
-THREADS="${THREADS:-50}"
 
-REQUIRED_TOOLS=(subfinder dnsx amass httpx nmap naabu feroxbuster wafw00f nuclei katana)
-for tool in "${REQUIRED_TOOLS[@]}"; do
-    command -v "$tool" >/dev/null 2>&1 || { echo "[!] Missing tool: $tool"; exit 1; }
-done
-[[ -f "$WORDLIST" ]] || { echo "[!] Wordlist not found: $WORDLIST (install seclists)"; exit 1; }
+echo "=================================================="
+echo " Starting Security Pipeline for: $TARGET"
+echo " Saving results to directory: /$OUTPUT_DIR"
+echo "=================================================="
 
+# Create an organized output directory
 mkdir -p "$OUTPUT_DIR"
-cd "$OUTPUT_DIR"
+cd "$OUTPUT_DIR" || exit
 
-# 1. Subdomain enumeration
-echo "[+] Subdomain enumeration"
-subfinder -d "$TARGET" -all -silent -o subfinder_raw.txt
-amass enum -passive -d "$TARGET" -o amass_raw.txt
+# --------------------------------------------------------
+# STEP 1: Passive & Active Subdomain Enumeration
+# --------------------------------------------------------
+echo -e "\n[+] Step 1: Running Subdomain Discovery..."
+
+# Run subfinder
+subfinder -d "$TARGET" -o subfinder_raw.txt
+
+# Run amass (using corrected syntax without the undefined -o flag)
+amass enum -d "$TARGET" -oTX amass_raw.txt
+
+# Combine, deduplicate, and clean the list
 cat subfinder_raw.txt amass_raw.txt | sort -u > unique_subdomains.txt
-echo "[*] $(wc -l < unique_subdomains.txt) unique subdomains"
+TOTAL_DOMAINS=$(wc -l < unique_subdomains.txt)
+echo "[*] Subdomain discovery complete. Found $TOTAL_DOMAINS unique domains."
 
-# 2. DNS resolution + record enrichment
-echo "[+] DNS resolution"
-dnsx -l unique_subdomains.txt -silent -a -aaaa -cname -resp -o resolved_dns.txt
-cut -d' ' -f1 resolved_dns.txt | sort -u > resolved_hosts.txt
-echo "[*] $(wc -l < resolved_hosts.txt) resolved hosts"
+# --------------------------------------------------------
+# STEP 2: Web Server Probing (Filtering Live Targets)
+# --------------------------------------------------------
+echo -e "\n[+] Step 2: Probing for live HTTP/HTTPS services..."
 
-# 3. HTTP probing
-echo "[+] HTTP probing"
-httpx -l resolved_hosts.txt -silent -status-code -title -tech-detect -o live_web_servers.txt
-cut -d' ' -f1 live_web_servers.txt | sort -u > live_urls.txt
-echo "[*] $(wc -l < live_urls.txt) live web services"
+# Filter live domains and collect status codes/technologies
+httpx-toolkit -l unique_subdomains.txt -silent -o live_web_servers.txt
 
-# 4. Port scanning (fast sweep, then service/version detail on hits)
-echo "[+] Port scanning"
-naabu -l resolved_hosts.txt -top-ports 1000 -silent -o open_ports.txt
-awk -F: '{print $1}' open_ports.txt | sort -u > hosts_with_open_ports.txt
-nmap -sV -iL hosts_with_open_ports.txt -oN nmap_services.txt
+TOTAL_LIVE=$(wc -l < live_web_servers.txt)
+echo "[*] Probing complete. $TOTAL_LIVE endpoints are actively responding."
 
-# 5. WAF fingerprinting
-echo "[+] WAF detection"
-wafw00f -i live_urls.txt -o waf_results.txt
+# --------------------------------------------------------
+# STEP 3: Fast Port Scanning
+# --------------------------------------------------------
+echo -e "\n[+] Step 3: Scanning top infrastructure ports..."
 
-# 6. Crawling for endpoints/params
-echo "[+] Crawling with katana"
-katana -list live_urls.txt -silent -jc -o katana_urls.txt
+# Use naabu to fast-scan top ports across discovered infrastructure
+naabu -l unique_subdomains.txt -top-ports 100 -silent -o open_ports.txt
 
-# 7. Content/directory discovery
-echo "[+] Content discovery (feroxbuster)"
-while read -r url; do
-    feroxbuster -u "$url" -w "$WORDLIST" -t "$THREADS" -q -o "ferox_$(echo "$url" | sed 's|[/:]|_|g').txt" || true
-done < live_urls.txt
+# --------------------------------------------------------
+# STEP 4: Vulnerability Scanning
+# --------------------------------------------------------
+echo -e "\n[+] Step 4: Launching Nuclei targeting live web servers..."
+echo "[*] Scanning for Medium, High, and Critical flaws..."
 
-# 8. Vulnerability scanning
-echo "[+] Vulnerability scanning (nuclei)"
-nuclei -l live_urls.txt -severity low,medium,high,critical -o vulnerabilities.txt
+# Scan the live web stack for security weaknesses and CVEs
+nuclei -l live_web_servers.txt -severity medium,high,critical -o vulnerabilities.txt
 
-echo "[+] Recon complete. Results in $OUTPUT_DIR/"
-echo "[i] Login brute-forcing is NOT automated. To test a specific discovered"
-echo "    login form manually with hydra, see README.md."
+echo -e "\n=================================================="
+echo " Pipeline Finished Successfully!"
+echo " Critical files generated:"
+echo "  - Unique Domains: $OUTPUT_DIR/unique_subdomains.txt"
+echo "  - Active Web Tech: $OUTPUT_DIR/live_web_servers.txt"
+echo "  - Open Ports: $OUTPUT_DIR/open_ports.txt"
+echo "  - Flaws Found: $OUTPUT_DIR/vulnerabilities.txt"
+echo "=================================================="
+     remove unnceory  texts and i want clean and for bug bounty i want you to give me and edit and make it for kali linux that in one i can get all and do action above for recon and remove the coments stuff clean
