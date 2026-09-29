@@ -65,4 +65,4 @@ echo "  - Active Web Tech: $OUTPUT_DIR/live_web_servers.txt"
 echo "  - Open Ports: $OUTPUT_DIR/open_ports.txt"
 echo "  - Flaws Found: $OUTPUT_DIR/vulnerabilities.txt"
 echo "=================================================="
-     remove unnceory  texts and i want clean and for bug bounty i want you to give me and edit and make it for kali linux that in one i can get all and do action above for recon and remove the coments stuff clean
+    
